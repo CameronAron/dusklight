@@ -13,6 +13,9 @@ static int g_log_audio_events_after_shot = 0;
 static DuskElemHandle g_el_audio_probe = nullptr;
 static u32 g_last_audio_id = 0;
 
+static constexpr u32 kMenuOpenSoundId = 0xA4000000;
+static constexpr u32 kMenuCloseSoundId = 0xA5000000;
+
 static void on_checkUpperItemActionBow_post(void* args, void* retval) {
     (void)args;
     (void)retval;
@@ -49,6 +52,12 @@ static void on_seStart_post(void* args, void* retval) {
     }
 
     const u32 sound_id = dusk::arg<u32>(args, 1);
+
+    if (sound_id == kMenuOpenSoundId || sound_id == kMenuCloseSoundId) {
+        dusk::g_api->log_info("[slingshot audio probe] ignored menu seStart id=0x%08X", sound_id);
+        return;
+    }
+
     g_last_audio_id = sound_id;
     g_log_audio_events_after_shot--;
 
