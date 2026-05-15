@@ -3,11 +3,20 @@
 #include "d/actor/d_a_alink.h"
 #include <cstdio>
 #include "m_Do/m_Do_audio.h"
+#include "Z2AudioLib/Z2AudioMgr.h"
 
 static DuskElemHandle g_el_slingshot = nullptr;
 static int g_shot_count = 0;
 static DuskElemHandle g_el_shots = nullptr;
 static int g_prev_shot_state = 0;
+static int g_log_audio_events_after_shot = 0;
+static DuskElemHandle g_el_audio_probe = nullptr;
+static u32 g_last_audio_id = 0;
+
+static constexpr u32 kMenuOpenSoundId = 0xA4000000;
+static constexpr u32 kMenuCloseSoundId = 0xA5000000;
+static constexpr u32 kPachinkoDrawSoundId = 0x200AF;
+static constexpr u32 kPachinkoShotSoundId = 0x200B0;
 
 static void on_checkUpperItemActionBow_post(void* args, void* retval) {
     (void)args;
@@ -28,6 +37,7 @@ static void on_checkUpperItemActionBow_post(void* args, void* retval) {
 
     if (g_prev_shot_state == 0 && current == 1) {
         g_shot_count++;
+        g_log_audio_events_after_shot = 8;
 
         dusk::g_api->log_info(
             "Slingshot shot detected! Total shots: %d",
@@ -35,6 +45,39 @@ static void on_checkUpperItemActionBow_post(void* args, void* retval) {
     }
 
     g_prev_shot_state = current;
+}
+
+
+static void on_seStartOnlyReverb_post(void* args, void* retval) {
+    (void)retval;
+    const u32 sound_id = dusk::arg<u32>(args, 1);
+
+    if (sound_id == kPachinkoDrawSoundId || sound_id == kPachinkoShotSoundId) {
+        g_last_audio_id = sound_id;
+        dusk::g_api->log_info(
+            "[slingshot audio probe] seStartOnlyReverb matched slingshot id=0x%08X (%u)",
+            sound_id, sound_id);
+    }
+}
+
+static void on_seStart_post(void* args, void* retval) {
+    (void)retval;
+    if (g_log_audio_events_after_shot <= 0) {
+        return;
+    }
+
+    const u32 sound_id = dusk::arg<u32>(args, 1);
+
+    if (sound_id == kMenuOpenSoundId || sound_id == kMenuCloseSoundId) {
+        dusk::g_api->log_info("[slingshot audio probe] ignored menu seStart id=0x%08X", sound_id);
+        return;
+    }
+
+    g_last_audio_id = sound_id;
+    g_log_audio_events_after_shot--;
+
+    dusk::g_api->log_info("[slingshot audio probe] nearby seStart id=0x%08X (%u), remaining=%d",
+        sound_id, sound_id, g_log_audio_events_after_shot);
 }
 
 static void BuildPanel(DuskPanelHandle panel, void*) {
@@ -45,6 +88,9 @@ static void BuildPanel(DuskPanelHandle panel, void*) {
 
     g_el_shots =
         dusk::g_api->panel_add_dyn_text(panel, "Shots fired: 0");
+
+    g_el_audio_probe =
+        dusk::g_api->panel_add_dyn_text(panel, "Last probed audio id: (none) [expect 0x000200AF/0x000200B0]");
 }
 
 static void UpdatePanel(void*) {
@@ -65,10 +111,12 @@ static void UpdatePanel(void*) {
         "Slingshot equipped: YES" :
         "Slingshot equipped: NO");
 
-    char buf[64];
+    char buf[96];
     snprintf(buf, sizeof(buf), "Shots fired: %d", g_shot_count);
-
     dusk::g_api->elem_set_text(g_el_shots, buf);
+
+    snprintf(buf, sizeof(buf), "Last probed audio id: 0x%08X", g_last_audio_id);
+    dusk::g_api->elem_set_text(g_el_audio_probe, buf);
 }
 
 extern "C" {
@@ -80,6 +128,8 @@ void mod_init(DuskModAPI* api) {
     api->register_tab_update(UpdatePanel, nullptr);
 
     dusk::hookAddPost<&daAlink_c::checkUpperItemActionBow>(on_checkUpperItemActionBow_post);
+    dusk::hookAddPost<&daAlink_c::seStartOnlyReverb>(on_seStartOnlyReverb_post);
+    dusk::hookAddPost<&Z2AudioMgr::seStart>(on_seStart_post);
 }
 
 void mod_tick(DuskModAPI* api) {
