@@ -15,6 +15,8 @@ static u32 g_last_audio_id = 0;
 
 static constexpr u32 kMenuOpenSoundId = 0xA4000000;
 static constexpr u32 kMenuCloseSoundId = 0xA5000000;
+static constexpr u32 kPachinkoDrawSoundId = 0x200AF;
+static constexpr u32 kPachinkoShotSoundId = 0x200B0;
 
 static void on_checkUpperItemActionBow_post(void* args, void* retval) {
     (void)args;
@@ -43,6 +45,19 @@ static void on_checkUpperItemActionBow_post(void* args, void* retval) {
     }
 
     g_prev_shot_state = current;
+}
+
+
+static void on_seStartOnlyReverb_post(void* args, void* retval) {
+    (void)retval;
+    const u32 sound_id = dusk::arg<u32>(args, 1);
+
+    if (sound_id == kPachinkoDrawSoundId || sound_id == kPachinkoShotSoundId) {
+        g_last_audio_id = sound_id;
+        dusk::g_api->log_info(
+            "[slingshot audio probe] seStartOnlyReverb matched slingshot id=0x%08X (%u)",
+            sound_id, sound_id);
+    }
 }
 
 static void on_seStart_post(void* args, void* retval) {
@@ -75,7 +90,7 @@ static void BuildPanel(DuskPanelHandle panel, void*) {
         dusk::g_api->panel_add_dyn_text(panel, "Shots fired: 0");
 
     g_el_audio_probe =
-        dusk::g_api->panel_add_dyn_text(panel, "Last probed audio id: (none)");
+        dusk::g_api->panel_add_dyn_text(panel, "Last probed audio id: (none) [expect 0x000200AF/0x000200B0]");
 }
 
 static void UpdatePanel(void*) {
@@ -113,6 +128,7 @@ void mod_init(DuskModAPI* api) {
     api->register_tab_update(UpdatePanel, nullptr);
 
     dusk::hookAddPost<&daAlink_c::checkUpperItemActionBow>(on_checkUpperItemActionBow_post);
+    dusk::hookAddPost<&daAlink_c::seStartOnlyReverb>(on_seStartOnlyReverb_post);
     dusk::hookAddPost<&Z2AudioMgr::seStart>(on_seStart_post);
 }
 
